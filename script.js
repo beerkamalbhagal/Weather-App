@@ -18,7 +18,7 @@ const forecastItemsContainer = document.querySelector('.forecast-items-container
 const suggestionsList = document.querySelector('.suggestions-list')
 const countryNameEl = document.querySelector('.country-name')
 
-const homeBtn = document.querySelector('.home-btn')
+const homeBtn = document.querySelector('.home-fab')
 const forecastToggleBtn = document.querySelector('.forecast-toggle-btn')
 const mainContainerEl = document.querySelector('.main-container')
 
@@ -495,9 +495,10 @@ async function updateWeatherInfo(city, stateFromSelection) {
     const weatherData = data.weather
     const {
         name: country,
-        main: { temp, humidity, temp_min, temp_max },
+        main: { temp, humidity, temp_min, temp_max, feels_like, pressure },
         weather: [{ id, main }],
-        wind: { speed }
+        wind: { speed },
+        visibility
     } = weatherData
 
     countryTxt.textContent = country
@@ -525,6 +526,69 @@ async function updateWeatherInfo(city, stateFromSelection) {
     const sunset = Number(weatherData?.sys?.sunset) || 0
     const eveNight = isEveningOrNight(sunrise, sunset)
     weatherSummaryImg.src = `assets/weather/${getWeatherIcon(id, eveNight)}`
+
+    // --- Feels-like ---
+    // Falls back to the actual temp if feels_like is missing — OWM does
+    // this for a small fraction of cached responses.
+    const feelsLikeEl = document.querySelector('.feels-like-txt')
+    if (feelsLikeEl) {
+        feelsLikeEl.textContent = `Feels like ${Math.round(feels_like ?? temp)}°`
+    }
+
+    // --- Pressure + visibility ---
+    // OWM returns visibility in meters; convert to km when >= 1000 m so
+    // the value reads as "10.0 km" rather than "10000 m". Show meters
+    // explicitly only when below that threshold so low-visibility
+    // locations (fog at 240 m, etc.) read accurately.
+    const pressureEl = document.querySelector('.pressure-value-txt')
+    if (pressureEl && Number.isFinite(pressure)) {
+        pressureEl.textContent = `${Math.round(pressure)} hPa`
+    }
+    const visibilityEl = document.querySelector('.visibility-value-txt')
+    if (visibilityEl) {
+        // Treat 0 / negative / non-finite as "no data" rather than
+        // rendering bogus "0 km" — OWM has been known to return 0 for
+        // data holes.
+        if (!Number.isFinite(visibility) || visibility <= 0) {
+            visibilityEl.textContent = '—'
+        } else if (visibility >= 1000) {
+            // Round to whole km once we're past 10 km so "10 km"
+            // doesn't render as "10.0 km".
+            visibilityEl.textContent = `${(visibility / 1000).toFixed(visibility >= 10000 ? 0 : 1)} km`
+        } else {
+            visibilityEl.textContent = `${visibility} m`
+        }
+    }
+
+    // --- Sunrise / sunset pill ---
+    // Hide the pill for polar locations where sunrise=0 and sunset=0;
+    // OWM emits 0 for those, so we treat it as "no sunrise today".
+    const sunTimesContainer = document.querySelector('.weather-sun-times')
+    if (sunTimesContainer) {
+        const hasSun = sunrise > 0 && sunset > 0
+        sunTimesContainer.hidden = !hasSun
+        if (hasSun) {
+            const sunriseEl = document.querySelector('.sunrise-value-txt')
+            const sunsetEl = document.querySelector('.sunset-value-txt')
+            if (sunriseEl) sunriseEl.textContent = formatTime(sunrise)
+            if (sunsetEl) sunsetEl.textContent = formatTime(sunset)
+        }
+    }
+
+    // --- Track the current city for recents + favorites ---
+    // `stateName` was computed earlier using the priority chain
+    // stateFromSelection > data.region.state. We capture it here so
+    // the recent record keeps the user's selected sub-region instead
+    // of losing it after a later free-text re-search.
+    currentCityEntry = {
+        name: weatherData.name,
+        country: weatherData?.sys?.country || '',
+        state: stateName,
+        lat: weatherData?.coord?.lat,
+        lon: weatherData?.coord?.lon
+    }
+    addRecent(currentCityEntry)
+    setFavBtnState(isFavorite(currentCityEntry))
 
     // Swap the card's background to the weather/time-of-day jpg.
     applyWeatherBackground(weatherData)
@@ -612,5 +676,306 @@ if (homeBtn) {
             forecastToggleBtn.setAttribute('aria-expanded', 'true')
             setForecastVisible(true)
         }
+
+        // Repaint the home dashboard so freshly added recents / favorites
+        // show up after the user returns. Cheap — at most 6 buttons.
+        renderHomeDashboard()
     })
 }
+
+
+// ---------------------------------------------------------------
+// HOME DASHBOARD + FAVORITES (localStorage-backed)
+// ---------------------------------------------------------------
+//
+// All state lives in two localStorage keys:
+//   weatherApp.recents   — last 6 successful searches, FIFO
+//   weatherApp.favorites — user-starred cities, no cap
+//
+// Each entry is the minimum payload needed to re-render and re-fetch
+// the city: { name, country, state, lat?, lon? }.
+//
+// Everything below is wrapped so a thrown localStorage call (Safari
+// private mode, full quota, cookies disabled) degrades to "no
+// recents / favorites" instead of crashing the page.
+
+const favBtn = document.querySelector('.fav-btn')
+
+// Track the city whose weather is currently shown. Updated at the end
+// of `updateWeatherInfo`; read by the fav-btn click handler.
+let currentCityEntry = null
+const RECENTS_KEY = 'weatherApp.recents'
+const FAVORITES_KEY = 'weatherApp.favorites'
+const MAX_RECENTS = 6
+
+function readStorageArray(key) {
+    try {
+        const raw = localStorage.getItem(key)
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+    } catch (_) {
+        return []
+    }
+}
+
+function writeStorageArray(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch (_) { /* swallow */ }
+}
+
+const getRecents = () => readStorageArray(RECENTS_KEY)
+const setRecents = (arr) => writeStorageArray(RECENTS_KEY, arr)
+const getFavorites = () => readStorageArray(FAVORITES_KEY)
+const setFavorites = (arr) => writeStorageArray(FAVORITES_KEY, arr)
+
+// Dedup key for a city record: lowercased name+country so "London, GB"
+// and "LONDON, gb" land on the same slot in both lists.
+function cityKey(entry) {
+    return `${(entry?.name || '').toLowerCase().trim()}|${(entry?.country || '').toLowerCase().trim()}`
+}
+
+// Push `entry` to the front of recents, dedup, cap at MAX_RECENTS.
+function addRecent(entry) {
+    if (!entry || !entry.name) return
+    const key = cityKey(entry)
+    const list = getRecents().filter((e) => cityKey(e) !== key)
+    list.unshift(entry)
+    if (list.length > MAX_RECENTS) list.length = MAX_RECENTS
+    setRecents(list)
+}
+
+function isFavorite(entry) {
+    if (!entry || !entry.name) return false
+    const key = cityKey(entry)
+    return getFavorites().some((e) => cityKey(e) === key)
+}
+
+// Toggle membership; returns the new value (`true` = now favorited).
+function toggleFavorite(entry) {
+    if (!entry || !entry.name) return false
+    const key = cityKey(entry)
+    const list = getFavorites()
+    const idx = list.findIndex((e) => cityKey(e) === key)
+    if (idx >= 0) {
+        list.splice(idx, 1)
+        setFavorites(list)
+        return false
+    }
+    list.unshift(entry)
+    setFavorites(list)
+    return true
+}
+
+// Format a Unix timestamp (seconds) as e.g. "6:24 AM" in the user's
+// local timezone. Returns "" for non-finite / zero so the sun pill
+// can early-exit.
+function formatTime(unixTs) {
+    if (!Number.isFinite(unixTs) || unixTs <= 0) return ''
+    return new Date(unixTs * 1000).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+    })
+}
+
+// `Name, CountryCode` is the format OWM accepts for disambiguation
+// (e.g. "Springfield, US" rather than bare "Springfield"). Strip a
+// trailing comma so favorited-but-country-less entries (`{name:"X"}`)
+// still produce a valid query string.
+function citySearchString(entry) {
+    if (!entry || !entry.name) return ''
+    return `${entry.name}, ${entry.country || ''}`.replace(/,\s*$/, '').trim()
+}
+
+// Sync the weather-card star button with a boolean. We update both
+// aria-pressed (states the toggle) and aria-label (announces the
+// next action to screen readers).
+function setFavBtnState(isFav) {
+    if (!favBtn) return
+    favBtn.setAttribute('aria-pressed', String(!!isFav))
+    favBtn.setAttribute('aria-label', isFav ? 'Remove from favorites' : 'Add to favorites')
+}
+
+// Shared SVG markup so the weather-card btn and the home-grid cards
+// stay visually identical (otherwise the star filter / drop-shadow
+// would drift between the two).
+const STAR_OUTLINE_SVG = '<svg class="star-icon star-outline" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
+const STAR_FILLED_SVG = '<svg class="star-icon star-filled" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2z" fill="currentColor"/></svg>'
+
+// Build one saved-city card. The OUTER container is a <div> (not a
+// button) so we can host sibling buttons — the city "tile" and any
+// action icons (star, delete) — without nesting interactive
+// elements, which is invalid per the ARIA-in-HTML spec and trips up
+// screen readers.
+//
+// variant:
+//   'favorite' (default) — single star toggle in the top-right corner.
+//   'recent'   — X (delete) in top-right with the star pushed BELOW
+//                it, so the user can both delete the recent and still
+//                promote it to favorites without leaving the home
+//                screen.
+function buildCityCard(entry, variant = 'favorite') {
+    const card = document.createElement('div')
+    card.className = 'city-card'
+    card.dataset.name = entry.name || ''
+    card.dataset.country = entry.country || ''
+    if (variant === 'recent') card.classList.add('is-recent')
+
+    const isFav = isFavorite(entry)
+    if (isFav) card.dataset.favorite = 'true'
+
+    const stateName = entry.state || ''
+    const countryDisplay = getCountryName(entry.country) || entry.country || ''
+    const regionText = stateName && countryDisplay
+        ? `${stateName}, ${countryDisplay}`
+        : (stateName || countryDisplay)
+
+    // Tile: the main click target. Loads the city's weather.
+    const tile = document.createElement('button')
+    tile.type = 'button'
+    tile.className = 'city-card-tile'
+    const tileLabel = stateName
+        ? `Show weather for ${entry.name}, ${stateName}`
+        : `Show weather for ${entry.name}`
+    tile.setAttribute('aria-label', tileLabel)
+
+    const nameEl = document.createElement('span')
+    nameEl.className = 'city-card-name'
+    nameEl.textContent = entry.name || ''
+    tile.appendChild(nameEl)
+
+    const regionEl = document.createElement('span')
+    regionEl.className = 'city-card-region'
+    regionEl.textContent = regionText
+    tile.appendChild(regionEl)
+
+    card.appendChild(tile)
+
+    // Recents get a delete (X) button ABOVE the star. The star is
+    // positioned below via CSS (.city-card.is-recent .city-card-star
+    // { top: 2.45em }), which keeps the two icons visually nested on
+    // the right edge of the card.
+    if (variant === 'recent') {
+        const del = document.createElement('button')
+        del.type = 'button'
+        del.className = 'city-card-delete'
+        const delLabel = stateName
+            ? `Remove ${entry.name}, ${stateName} from recent searches`
+            : `Remove ${entry.name} from recent searches`
+        del.setAttribute('aria-label', delLabel)
+        del.innerHTML =
+            '<span class="material-symbols-outlined" aria-hidden="true">close</span>'
+        const onDelete = (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            removeRecent(entry)
+        }
+        del.addEventListener('click', onDelete)
+        del.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') onDelete(e)
+        })
+        card.appendChild(del)
+    }
+
+    // Star: sibling button, absolutely positioned over the tile.
+    // Sibling layout (rather than nested) keeps semantics valid;
+    // z-index lifts it above the tile so taps land on the star.
+    const star = document.createElement('button')
+    star.type = 'button'
+    star.className = 'city-card-star'
+    star.setAttribute('aria-pressed', isFav ? 'true' : 'false')
+    star.setAttribute('aria-label', isFav ? 'Remove from favorites' : 'Add to favorites')
+    star.innerHTML = STAR_OUTLINE_SVG + STAR_FILLED_SVG
+    card.appendChild(star)
+
+    const searchStr = citySearchString(entry)
+
+    tile.addEventListener('click', () => {
+        updateWeatherInfo(searchStr, entry.state || '')
+    })
+
+    const onStarClick = (e) => {
+        e.preventDefault()
+        const nowFav = toggleFavorite(entry)
+        // Reflect on this card immediately so the user sees feedback
+        // before any full re-render finishes.
+        card.dataset.favorite = nowFav ? 'true' : 'false'
+        star.setAttribute('aria-pressed', nowFav ? 'true' : 'false')
+        star.setAttribute('aria-label', nowFav ? 'Remove from favorites' : 'Add to favorites')
+        // If the user is currently viewing *this* city's weather, sync
+        // the fav-btn on the weather card so star state is consistent
+        // across both surfaces.
+        if (currentCityEntry && cityKey(currentCityEntry) === cityKey(entry)) {
+            setFavBtnState(nowFav)
+        }
+        // Promoting a recent to favorites drops it from the recents
+        // grid (we filter favs out of recents in renderHomeDashboard).
+        // Re-render so the card moves into the favorites grid without
+        // a full reload.
+        renderHomeDashboard()
+    }
+    star.addEventListener('click', onStarClick)
+    star.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') onStarClick(e)
+    })
+
+    return card
+}
+
+// Drop a city from the recents list. No-op if the entry isn't there
+// (e.g. the user double-tapped quickly). After removal, fully re-
+// paint the home dashboard so the empty / hidden state settles.
+function removeRecent(entry) {
+    if (!entry || !entry.name) return
+    const key = cityKey(entry)
+    const list = getRecents().filter((r) => cityKey(r) !== key)
+    setRecents(list)
+    renderHomeDashboard()
+}
+
+// Repaint the favorites + recent grids from localStorage. Cheap to
+// call (≤ 6 buttons each); idempotent; safe to fire after every
+// mutation.
+function renderHomeDashboard() {
+    const favSection = document.querySelector('[data-section="favorites"]')
+    const recentsSection = document.querySelector('[data-section="recents"]')
+    const favGrid = document.querySelector('[data-grid="favorites"]')
+    const recentsGrid = document.querySelector('[data-grid="recents"]')
+    const emptyEl = document.querySelector('.home-empty')
+    if (!favSection || !recentsSection || !favGrid || !recentsGrid) return
+
+    const favs = getFavorites()
+    // Don't duplicate: a favorited city is shown only under Favorites.
+    // (Recent record still occupies a slot in storage — it just doesn't
+    // render here so the same tile doesn't appear twice on the home.)
+    const favKeys = new Set(favs.map(cityKey))
+    const recents = getRecents().filter((r) => !favKeys.has(cityKey(r)))
+
+    favGrid.innerHTML = ''
+    favs.forEach((f) => favGrid.appendChild(buildCityCard(f, 'favorite')))
+    recentsGrid.innerHTML = ''
+    recents.forEach((r) => recentsGrid.appendChild(buildCityCard(r, 'recent')))
+
+    favSection.hidden = favs.length === 0
+    recentsSection.hidden = recents.length === 0
+    if (emptyEl) emptyEl.hidden = favs.length > 0 || recents.length > 0
+}
+
+// Wire the weather-card fav-btn. Defensive guard for `currentCityEntry`
+// so the click is a no-op before any city has been loaded.
+if (favBtn) {
+    favBtn.addEventListener('click', () => {
+        if (!currentCityEntry) return
+        const nowFav = toggleFavorite(currentCityEntry)
+        setFavBtnState(nowFav)
+        // If the home dashboard is the active section, repaint it so
+        // the change is reflected without forcing the user to navigate.
+        if (searchCitySection && searchCitySection.style.display !== 'none') {
+            renderHomeDashboard()
+        }
+    })
+}
+
+// Initial paint: render whatever favorites / recents were persisted
+// from a previous session. The home dashboard is the default-active
+// section, so this fires once before first interaction.
+renderHomeDashboard()

@@ -79,58 +79,66 @@ body::before {
 }
 
 
-/* TOPBAR / HOME BUTTON */
-.topbar {
-    display: flex;
-    align-items: center;
-    margin-bottom: 0.75em;
-}
-
-.home-btn {
-    background: rgb(0, 0, 0, 0.15);
-    border: 3px solid transparent;
+/* HOME-FAB (floating action button) */
+.home-fab {
+    /* Floating chip at the top-left of the card. Visible always so the
+       search bar stays at the same spot whether the user is on the home
+       dashboard or the weather card — the home-fab lives in the same
+       corner on both screens. */
+    position: absolute;
+    top: 1.425em;
+    left: 1.825em;
+    width: 2.85em;
+    height: 3.15em;
+    background: rgb(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 99px;
-    padding: 0.4em 0.7em;
-    cursor: pointer;
     color: white;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.35em;
-    transition: background 0.25s, border-color 0.25s, transform 0.12s;
-    font-weight: 600;
+    cursor: pointer;
+    z-index: 25;
+    padding: 0;
+    transition: background 0.18s ease, transform 0.12s ease,
+        border-color 0.18s ease;
 }
 
-.home-btn:hover {
-    background: rgb(0, 0, 0, 0.28);
-    border-color: rgb(0, 0, 0, 0.18);
+.home-fab:hover {
+    background: rgb(0, 0, 0, 0.36);
+    border-color: rgba(255, 255, 255, 0.18);
 }
 
-.home-btn:active {
-    transform: scale(0.94);
+.home-fab:active {
+    transform: scale(0.92);
 }
 
-.home-btn:focus-visible {
-    outline: none;
-    border-color: rgb(0, 0, 0, 0.35);
+.home-fab:focus-visible {
+    outline: 2px solid rgb(255, 255, 255, 0.6);
+    outline-offset: 2px;
 }
 
-.home-btn .material-symbols-outlined {
-    font-size: 1.35em;
+.home-fab .material-symbols-outlined {
+    font-size: 1.25em;
     line-height: 1;
 }
 
-.home-emoji {
-    font-size: 0.95em;
-    line-height: 1;
-    /* keep emoji subtle so the bars stay the dominant cue */
-    opacity: 0.85;
+/* The .main-container is a flex column child of <body> and doesn't
+   have its own position: relative — add it so .home-fab anchors to
+   the card's edge instead of expanding to the viewport. */
+.main-container {
+    position: relative;
 }
 
 /* INPUT CONTAINER */
 .input-container {
     position: relative;
     margin-bottom: 1.5625em;
+    /* Reserve room on the left for the floating home-fab so the input
+       text isn't overlapped by the chip. The fab itself is positioned
+       absolutely; the padding just shifts the search bar right so its
+       left edge clears the chip's hit area. */
+    padding-left: 3em;
 }
 
 .city-input {
@@ -605,3 +613,506 @@ body::before {
 
 
 /* end SECTION: MESSAGE */
+
+
+/* ---------------------------------------------------------------
+   LOCATION ROW + FAVORITE BUTTON
+   --------------------------------------------------------------- */
+
+.location-right {
+    /* Right-side cluster of the date text + the star toggle. Wrapping
+       them together keeps flexbox honest — three separate flex items
+       (location, date, star) would re-balance layout unpredictably. */
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    min-width: 0;
+}
+
+.current-date-txt {
+    /* Date is short ("June 21, 5:35 PM") but might bump into the star
+       on very narrow widths — ellipsize cleanly if so. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fav-btn {
+    background: rgb(0, 0, 0, 0.18);
+    border: none;
+    width: 2.1em;
+    height: 2.1em;
+    border-radius: 99px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    opacity: 0.85;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
+}
+
+.fav-btn:hover {
+    opacity: 1;
+    background: rgb(0, 0, 0, 0.32);
+}
+
+.fav-btn:active {
+    transform: scale(0.92);
+}
+
+.fav-btn:focus-visible {
+    outline: 2px solid rgb(255, 255, 255, 0.6);
+    outline-offset: 2px;
+}
+
+.fav-btn .star-icon {
+    width: 1.15em;
+    height: 1.15em;
+    display: block;
+}
+
+.fav-btn .star-filled {
+    display: none;
+}
+
+.fav-btn[aria-pressed="true"] .star-outline {
+    display: none;
+}
+
+.fav-btn[aria-pressed="true"] .star-filled {
+    display: block;
+    color: #ffd24a;
+    /* Quick fill pop so the toggle feels responsive */
+    filter: drop-shadow(0 0 0.25em rgba(255, 210, 74, 0.4));
+}
+
+.fav-btn[aria-pressed="true"] {
+    background: rgb(0, 0, 0, 0.32);
+    opacity: 1;
+}
+
+
+/* ---------------------------------------------------------------
+   FEELS LIKE + SUN TIMES
+   --------------------------------------------------------------- */
+
+.feels-like-txt {
+    /* Tertiary line under the high/low pill. Slightly muted so it
+       doesn't compete with the primary temp. */
+    font-size: 0.78em;
+    opacity: 0.78;
+    font-weight: 400;
+    margin-top: -0.1em;
+}
+
+.weather-sun-times {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.55em 0.4em;
+    background: rgb(255, 255, 255, 0.08);
+    border-radius: 12px;
+    /* Lets the conditions grid breathe more evenly below it */
+    margin-top: -0.4em;
+}
+
+.weather-sun-times[hidden] {
+    display: none;
+}
+
+.sun-time {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.85em;
+    min-width: 0;
+}
+
+.sun-time .material-symbols-outlined {
+    font-size: 1.15em;
+    line-height: 1;
+}
+
+.sun-time .sun-label {
+    opacity: 0.78;
+    font-weight: 400;
+    /* Hide on very narrow widths — saves the value and the icon. */
+}
+
+.sun-time .sun-value {
+    font-weight: 600;
+}
+
+@media (max-width: 280px) {
+    /* If the card is unusually narrow, drop the labels — the icons plus
+       the time value still read as sunrise/sunset. */
+    .sun-time .sun-label {
+        display: none;
+    }
+}
+
+
+/* ---------------------------------------------------------------
+   CONDITIONS GRID — now 2x2 (humidity, wind, pressure, visibility)
+   --------------------------------------------------------------- */
+
+.weather-conditions-container {
+    /* Override the existing flex layout. Using a 2-column grid keeps
+       the four items packed neatly and leaves a small horizontal gap
+       between the columns. */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55em 0.9em;
+}
+
+.condition-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* Shift the right-column cells (Wind Speed row 1 col 2, Visibility
+   row 2 col 2) slightly right. nth-child(even) targets items 2 and
+   4 — the two grid cells that occupy the second column — without
+   affecting Humidity or Pressure. Padding (not gap) keeps the icon-
+   label spacing identical to the left column. */
+.condition-item:nth-child(even) {
+    padding-left: 5.85em;
+}
+
+.condition-item .condition-info {
+    min-width: 0;
+}
+
+.condition-item .condition-info h5:first-child {
+    font-size: 0.78em;
+    opacity: 0.78;
+    font-weight: 400;
+}
+
+.condition-item .condition-info h5:last-child {
+    /* Keep the value on one line; if a translation makes it longer
+       than the column, ellipsize. */
+    font-size: 0.92em;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+/* ---------------------------------------------------------------
+   HOME DASHBOARD
+   --------------------------------------------------------------- */
+
+.home-dashboard {
+    /* Override .section-message defaults so the search-city pane reads
+       as a left-aligned dashboard rather than a center-anchored
+       welcome message with a 95% top margin. */
+    margin-top: 0;
+    padding-top: 0.5em;
+    align-items: stretch;
+    text-align: left;
+}
+
+.home-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1em;
+    width: 100%;
+    /* Fills the section so the scroll surface is `.home-content`,
+       not the whole card. */
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Reserve room for the scrollbar so cards don't shift when it
+       appears. */
+    scrollbar-gutter: stable;
+}
+
+.home-content::-webkit-scrollbar {
+    width: 0.35em;
+}
+
+.home-content::-webkit-scrollbar-track {
+    background: rgb(0, 0, 0, 0.08);
+    border-radius: 99px;
+}
+
+.home-content::-webkit-scrollbar-thumb {
+    background: rgb(0, 0, 0, 0.3);
+    border-radius: 99px;
+}
+
+.home-greeting {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    /* Title + subtitle now sit BELOW the search bar (in the
+       .home-content scroll surface), so the search bar position is
+       unchanged between the home dashboard and the weather card. */
+    padding-top: 8.4em;
+}
+
+.home-greeting h1 {
+    font-size: 1.6em;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.home-greeting h4 {
+    opacity: 0.78;
+    font-weight: 400;
+    font-size: 0.85em;
+    max-width: 28em;
+    margin: 0 auto;
+    line-height: 1.35;
+}
+
+.saved-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+}
+
+.saved-section[hidden] {
+    display: none;
+}
+
+.saved-section-label {
+    text-transform: uppercase;
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+    margin-left: 0.25em;
+}
+
+.saved-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55em;
+}
+
+@media (max-width: 340px) {
+    /* Single-column cards on very narrow viewports so city/region
+       text doesn't have to ellipsize aggressively. */
+    .saved-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.city-card {
+    /* The outer wrapper is a non-interactive <div> so we can host two
+       sibling buttons — the tile and the star — without nesting
+       interactive elements. It only carries the visual chrome
+       (background, border, radius) and the position context for the
+       absolutely-positioned star. */
+    position: relative;
+    background: rgb(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    min-width: 0;
+    transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.city-card:hover {
+    background: rgb(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.city-card[data-favorite="true"] {
+    background: rgba(255, 210, 74, 0.1);
+    border-color: rgba(255, 210, 74, 0.3);
+}
+
+.city-card[data-favorite="true"]:hover {
+    background: rgba(255, 210, 74, 0.16);
+}
+
+.city-card-tile {
+    /* The main click target. Fills the wrapper so the whole card body
+       (minus the star's hit area) routes to "load this city's weather". */
+    width: 100%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: white;
+    font-family: inherit;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+    text-align: left;
+    padding: 0.65em 0.75em 0.7em;
+    /* Leave room on the right so the city name doesn't collide
+       visually with the absolutely-positioned star. */
+    padding-right: 2.6em;
+    min-width: 0;
+    border-radius: 12px;
+    transition: transform 0.12s ease;
+}
+
+.city-card-tile:hover {
+    transform: translateY(-1px);
+}
+
+.city-card-tile:active {
+    transform: scale(0.985);
+}
+
+.city-card-tile:focus-visible {
+    outline: 2px solid rgb(255, 255, 255, 0.6);
+    outline-offset: -2px;
+}
+
+.city-card-name {
+    font-size: 0.95em;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.city-card-region {
+    font-size: 0.74em;
+    font-weight: 400;
+    opacity: 0.8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.city-card-star {
+    /* Sibling of the tile. Larger hit area (≥ 1.8em / ~36px) than
+       before so thumb taps reliably land on the star instead of the
+       tile below. Z-index keeps it above the tile so taps don't slip
+       through. */
+    position: absolute;
+    top: 0.25em;
+    right: 0.25em;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.35em;
+    min-width: 1.8em;
+    min-height: 1.8em;
+    color: rgba(255, 255, 255, 0.55);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 99px;
+    z-index: 1;
+    transition: color 0.18s ease, transform 0.12s ease, background 0.18s ease;
+}
+
+.city-card-star:hover {
+    color: #ffd24a;
+    background: rgba(255, 255, 255, 0.08);
+    transform: scale(1.1);
+}
+
+.city-card-star:active {
+    transform: scale(0.92);
+}
+
+.city-card-star:focus-visible {
+    outline: 2px solid rgb(255, 255, 255, 0.6);
+    outline-offset: 2px;
+}
+
+.city-card-star .star-icon {
+    width: 1.05em;
+    height: 1.05em;
+    display: block;
+}
+
+.city-card-star .star-filled {
+    display: none;
+}
+
+.city-card[data-favorite="true"] .city-card-star .star-outline {
+    display: none;
+}
+
+.city-card[data-favorite="true"] .city-card-star .star-filled {
+    display: block;
+    color: #ffd24a;
+}
+
+.home-empty {
+    text-align: center;
+    opacity: 0.65;
+    font-size: 0.85em;
+    line-height: 1.4;
+    padding: 0.4em 0.5em 0.8em;
+}
+
+.home-empty[hidden] {
+    display: none;
+}
+
+
+/* ---------------------------------------------------------------
+   CITY CARD — DELETE BUTTON (RECENTS)
+   --------------------------------------------------------------- */
+
+/* Recents use a delete button (X) in the same spot the favorite
+   star occupies in favorited cards. The star is then pushed down
+   so users can still promote a recent to favorites — primary
+   intent is "remove", secondary is "pin". */
+.city-card-delete {
+    /* Mirror .city-card-star's box-model so the two icons align
+       identically when the stack is active. */
+    position: absolute;
+    top: 0.25em;
+    right: 0.25em;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.65);
+    padding: 0.35em;
+    min-width: 1.8em;
+    min-height: 1.8em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 99px;
+    z-index: 2;
+    transition: color 0.18s ease, background 0.18s ease,
+        transform 0.12s ease;
+}
+
+.city-card-delete:hover {
+    color: #ff8b8b;
+    background: rgba(255, 107, 107, 0.12);
+    transform: scale(1.1);
+}
+
+.city-card-delete:active {
+    transform: scale(0.92);
+}
+
+.city-card-delete:focus-visible {
+    outline: 2px solid rgb(255, 255, 255, 0.6);
+    outline-offset: 2px;
+}
+
+.city-card-delete .material-symbols-outlined {
+    font-size: 1.1em;
+    line-height: 1;
+    font-weight: 600;
+}
+
+/* On recent cards, push the star down so it sits below the X icon.
+   The exact top value is just past the X's full hit-area (~2.2em +
+   0.25em gap) so visually the star nests right under the X. */
+.city-card.is-recent .city-card-star {
+    top: 2.45em;
+}

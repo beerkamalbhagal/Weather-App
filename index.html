@@ -15,6 +15,15 @@
 <body>
 
     <main class="main-container">
+        <!-- Floating home button — visible always (both home dashboard and
+             weather card). The "back-to-home" affordance that returns the
+             user to the home dashboard where their most recently searched
+             city appears in recents. Positioned absolutely at the top-left
+             of the card so the chip sits in a fixed corner regardless of
+             which screen is active. -->
+        <button class="home-fab" type="button" aria-label="Go to home">
+            <span class="material-symbols-outlined">home</span>
+        </button>
 
         <header class="input-container">
             <input class="city-input" placeholder="Search City" type="text" name="city-search" role="combobox"
@@ -41,7 +50,24 @@
                         </div>
                     </div>
                 </div>
-                <h5 class="current-date-txt regular-txt">June 21, 5:35 PM</h5>
+                <div class="location-right">
+                    <h5 class="current-date-txt regular-txt">June 21, 5:35 PM</h5>
+                    <!-- Star toggles this city into the favorites list. The
+                         aria-label is updated by script.js so screen readers
+                         announce "Remove from favorites" once it's starred. -->
+                    <button class="fav-btn" type="button" aria-pressed="false"
+                        aria-label="Add to favorites">
+                        <svg class="star-icon star-outline" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2z"
+                                fill="none" stroke="currentColor" stroke-width="1.8"
+                                stroke-linejoin="round" />
+                        </svg>
+                        <svg class="star-icon star-filled" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2z"
+                                fill="currentColor" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             <div class="weather-summary-container">
@@ -58,9 +84,32 @@
                         <span class="temp-night-icon material-symbols-outlined">dark_mode</span>
                         <span class="temp-night-txt">21°</span>
                     </div>
+                    <!-- Secondary "feels like" reading — sits below the day/night
+                         pill so the eye reads the primary temp, the day's range,
+                         then the perceived-temp nuance. -->
+                    <div class="feels-like-txt regular-txt">Feels like —°</div>
                 </div>
             </div>
 
+            <!-- Sunrise / sunset pill. Hidden by default; shown only when the
+                 API returns real Unix timestamps (locations above the polar
+                 circles have no sunrise/sunset). -->
+            <div class="weather-sun-times" hidden>
+                <div class="sun-time">
+                    <span class="material-symbols-outlined" aria-hidden="true">wb_twilight</span>
+                    <span class="sun-label regular-txt">Sunrise</span>
+                    <span class="sun-value sunrise-value-txt">—</span>
+                </div>
+                <div class="sun-time">
+                    <span class="material-symbols-outlined" aria-hidden="true">wb_sunny</span>
+                    <span class="sun-label regular-txt">Sunset</span>
+                    <span class="sun-value sunset-value-txt">—</span>
+                </div>
+            </div>
+
+            <!-- 2x2 conditions grid: humidity + wind (existing) plus pressure
+                 + visibility (new). The CSS converts this container to a
+                 CSS grid so the four items pack as two rows of two. -->
             <div class="weather-conditions-container">
                 <div class="condition-item">
                     <span class="material-symbols-outlined">
@@ -81,6 +130,26 @@
                         <h5 class="wind-value-txt">2 M/s</h5>
                     </div>
                 </div>
+
+                <div class="condition-item">
+                    <span class="material-symbols-outlined" aria-hidden="true">
+                        compress
+                    </span>
+                    <div class="condition-info">
+                        <h5 class="regular-txt">Pressure</h5>
+                        <h5 class="pressure-value-txt">— hPa</h5>
+                    </div>
+                </div>
+
+                <div class="condition-item">
+                    <span class="material-symbols-outlined" aria-hidden="true">
+                        visibility
+                    </span>
+                    <div class="condition-info">
+                        <h5 class="regular-txt">Visibility</h5>
+                        <h5 class="visibility-value-txt">—</h5>
+                    </div>
+                </div>
             </div>
 
             <div class="forecast-header">
@@ -96,12 +165,45 @@
             </div>
         </section>
 
-        <section class="search-city section-message">
-            <div>
-                <h1>Search City</h1>
-                <h4 class="regular-txt">
-                    Find out the weather conditions of the city.
-                </h4>
+        <!-- Home dashboard. The `.home-dashboard` modifier overrides
+             .section-message's heavy margin/center-align so this reads as
+             a normal left-aligned panel with a greeting + scrollable
+             favorites/recent lists. -->
+        <section class="search-city section-message home-dashboard">
+            <div class="home-content">
+                <!-- Favorites: populated by script.js from
+                     localStorage `weatherApp.favorites`. Hidden when empty. -->
+                <div class="saved-section" data-section="favorites" hidden>
+                    <h5 class="saved-section-label regular-txt">Favorites</h5>
+                    <div class="saved-grid" data-grid="favorites"></div>
+                </div>
+
+                <!-- Recent: populated from `weatherApp.recents`. Favorited
+                     cities are filtered out so the same city doesn't appear
+                     twice. Hidden when the filtered list is empty. -->
+                <div class="saved-section" data-section="recents" hidden>
+                    <h5 class="saved-section-label regular-txt">Recent</h5>
+                    <div class="saved-grid" data-grid="recents"></div>
+                </div>
+
+                <!-- Empty-state hint. Shown only when both saved-sections
+                     above are empty (first-time users). Hidden once anything
+                     is in localStorage. -->
+                <div class="home-empty regular-txt" hidden>
+                    Search above to see cities you check appear here.
+                </div>
+
+                <!-- Title + subtitle live BELOW the saved sections so users
+                     see their favorites/recent cities first and the branding
+                     "Search City" lands at the bottom. Greeting only renders
+                     on the home screen; .weather-info and .not-found don't
+                     host this element at all. -->
+                <header class="home-greeting">
+                    <h1>Search City</h1>
+                    <h4 class="regular-txt">
+                        Find out the conditions of any city or revisit places
+                    </h4>
+                </header>
             </div>
         </section>
 
